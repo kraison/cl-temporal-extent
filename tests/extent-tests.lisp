@@ -105,6 +105,13 @@ move together (design §3.3)."
       (is-true (timestamp= (bound-latest (extent-end e))
                            (bound-latest (extent-end back)))))))
 
+(test sexp->extent-rejects-a-malformed-shape
+  "⚠ DESTRUCTURING-BIND on a too-short list signals a raw PROGRAM-ERROR, not
+INVALID-EXTENT -- a caller reading untrusted data (cl-llm#13 unit 2) must
+never see that leak through."
+  (signals invalid-extent (sexp->extent '(:not-an-extent 9)))
+  (signals invalid-extent (sexp->extent '())))
+
 (test the-codec-preserves-instant-coupling
   "A round-tripped instant must come back coupled, or the algebra would
 silently start over-reporting uncertainty for it."

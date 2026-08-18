@@ -162,15 +162,17 @@ endpoint coupling."
         (extent-standing e)))
 
 (defun sexp->extent (s)
-  "Inverse of EXTENT->SEXP.  Signals INVALID-EXTENT on an unknown tag or
-version."
+  "Inverse of EXTENT->SEXP.  Signals INVALID-EXTENT on an unknown tag,
+version, or a shape that isn't a version-1 extent sexp at all -- a caller
+reading untrusted data must never see a raw DESTRUCTURING-BIND error."
+  (unless (and (consp s) (= 8 (length s))
+               (eq (first s) :temporal-extent) (eql (second s) 1))
+    (error 'invalid-extent
+           :reason (format nil "not a version-1 extent sexp: ~S" s)))
   (destructuring-bind (tag version kind start end precision semantics
                        standing)
       s
-    (unless (and (eq tag :temporal-extent) (eql version 1))
-      (error 'invalid-extent
-             :reason (format nil "not a version-1 extent sexp: ~S ~S"
-                             tag version)))
+    (declare (ignore tag version))
     (ecase kind
       (:instant (make-instant (%sexp->bound start) :precision precision
                               :semantics semantics :standing standing))
