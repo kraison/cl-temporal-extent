@@ -108,9 +108,15 @@ move together (design §3.3)."
 (test sexp->extent-rejects-a-malformed-shape
   "⚠ DESTRUCTURING-BIND on a too-short list signals a raw PROGRAM-ERROR, not
 INVALID-EXTENT -- a caller reading untrusted data (cl-llm#13 unit 2) must
-never see that leak through."
+never see that leak through.  LENGTH is just as dangerous: called on a
+dotted list it also signals a raw TYPE-ERROR before the tag/version check
+ever runs, so an improper list must be covered here too, not just a
+too-short proper one."
   (signals invalid-extent (sexp->extent '(:not-an-extent 9)))
-  (signals invalid-extent (sexp->extent '())))
+  (signals invalid-extent (sexp->extent '()))
+  (signals invalid-extent
+    (sexp->extent (list* :temporal-extent 1 :instant 2 3 4 5 6)))
+  (signals invalid-extent (sexp->extent 42)))
 
 (test the-codec-preserves-instant-coupling
   "A round-tripped instant must come back coupled, or the algebra would

@@ -161,11 +161,20 @@ endpoint coupling."
         (extent-semantics e)
         (extent-standing e)))
 
+(defun %extent-sexp-shape-p (s)
+  "T if S is a proper list of exactly 8 elements.  Deliberately not
+LENGTH: on an improper list LENGTH signals a raw TYPE-ERROR, which is
+exactly the leak SEXP->EXTENT's shape check exists to close."
+  (loop for tail = s then (cdr tail)
+        for i from 0
+        do (cond ((= i 8) (return (null tail)))
+                 ((not (consp tail)) (return nil)))))
+
 (defun sexp->extent (s)
   "Inverse of EXTENT->SEXP.  Signals INVALID-EXTENT on an unknown tag,
 version, or a shape that isn't a version-1 extent sexp at all -- a caller
 reading untrusted data must never see a raw DESTRUCTURING-BIND error."
-  (unless (and (consp s) (= 8 (length s))
+  (unless (and (%extent-sexp-shape-p s)
                (eq (first s) :temporal-extent) (eql (second s) 1))
     (error 'invalid-extent
            :reason (format nil "not a version-1 extent sexp: ~S" s)))
