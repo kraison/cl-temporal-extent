@@ -145,7 +145,16 @@ MAKE-GRANULE-INSTANT instead."
 (defun %bound->sexp (b)
   (list (bound-earliest b) (bound-latest b)))
 
+(defun %bound-sexp-shape-p (s)
+  "T if S is a proper list of exactly 2 elements -- what %BOUND->SEXP
+writes.  Same reason as %EXTENT-SEXP-SHAPE-P: (FIRST S) on a non-list is a
+raw TYPE-ERROR, which is the leak SEXP->EXTENT exists to close."
+  (and (consp s) (consp (cdr s)) (null (cddr s))))
+
 (defun %sexp->bound (s)
+  (unless (%bound-sexp-shape-p s)
+    (error 'invalid-extent
+           :reason (format nil "not a bound sexp: ~S" s)))
   (make-bound (first s) (second s)))
 
 (defun extent->sexp (e)
@@ -171,9 +180,12 @@ exactly the leak SEXP->EXTENT's shape check exists to close."
                  ((not (consp tail)) (return nil)))))
 
 (defun sexp->extent (s)
-  "Inverse of EXTENT->SEXP.  Signals INVALID-EXTENT on an unknown tag,
-version, or a shape that isn't a version-1 extent sexp at all -- a caller
-reading untrusted data must never see a raw DESTRUCTURING-BIND error."
+  "Inverse of EXTENT->SEXP.  Every rejection is a SPACETIME-ERROR and never
+a raw DESTRUCTURING-BIND, ECASE or TYPE-ERROR, so this is safe over
+untrusted data: INVALID-EXTENT for a bad shape, tag, version, kind or
+precision, INVALID-BOUND for a bad endpoint, INVALID-STANDING for a bad
+standing.  ⚠ Handle SPACETIME-ERROR, not INVALID-EXTENT alone -- the
+subconditions keep diagnostics that flattening them into one would lose."
   (unless (and (%extent-sexp-shape-p s)
                (eq (first s) :temporal-extent) (eql (second s) 1))
     (error 'invalid-extent
@@ -182,9 +194,11 @@ reading untrusted data must never see a raw DESTRUCTURING-BIND error."
                        standing)
       s
     (declare (ignore tag version))
-    (ecase kind
+    (case kind
       (:instant (make-instant (%sexp->bound start) :precision precision
                               :semantics semantics :standing standing))
       (:interval (make-interval (%sexp->bound start) (%sexp->bound end)
                                 :precision precision :semantics semantics
-                                :standing standing)))))
+                                :standing standing))
+      (t (error 'invalid-extent
+                :reason (format nil "~S is not an extent kind" kind))))))

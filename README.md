@@ -74,7 +74,12 @@ receiving a confident wrong answer.
 `extent->sexp` produces a tree of keywords, integers and timestamps — plain
 data any ordinary serializer already handles, so an extent crosses a storage
 or wire boundary without reserving a type of its own. `sexp->extent` is its
-inverse and rejects an unknown tag or version.
+inverse, and it rejects anything that is not a version-1 extent sexp — a bad
+tag, version, shape, kind, bound, precision or standing — always as a
+`spacetime-error`, never as a raw `type-error`, so it is safe to point at
+untrusted data. Handle the root condition rather than `invalid-extent`
+alone: a bad endpoint stays an `invalid-bound` and a bad standing an
+`invalid-standing`, each keeping its own diagnostics.
 
 ## Installation
 

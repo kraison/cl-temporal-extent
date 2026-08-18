@@ -116,7 +116,42 @@ too-short proper one."
   (signals invalid-extent (sexp->extent '()))
   (signals invalid-extent
     (sexp->extent (list* :temporal-extent 1 :instant 2 3 4 5 6)))
-  (signals invalid-extent (sexp->extent 42)))
+  (signals invalid-extent (sexp->extent 42))
+  ;; A well-shaped 8-list can still be malformed INSIDE (cl-llm#13 final
+  ;; review, I1): an unknown KIND reached ECASE and a non-list in a bound
+  ;; position reached (FIRST S), both raw TYPE-ERRORs.
+  (signals invalid-extent
+    (sexp->extent '(:temporal-extent 1 :bogus (:unbounded :unbounded) nil
+                    :nsec :validity :observed)))
+  (signals invalid-extent
+    (sexp->extent '(:temporal-extent 1 :instant :not-a-bound nil
+                    :nsec :validity :observed)))
+  (signals invalid-extent
+    (sexp->extent '(:temporal-extent 1 :interval (:unbounded :unbounded)
+                    (:unbounded) :nsec :validity :observed))))
+
+(test sexp->extent-signals-a-spacetime-error-never-a-raw-one
+  "The contract this codec offers untrusted data (cl-llm#13 unit 2) is the
+ROOT condition, not INVALID-EXTENT alone: a bad endpoint is an
+INVALID-BOUND and a bad standing an INVALID-STANDING, each keeping the
+diagnostics flattening them into one would throw away.  ⚠ What must never
+escape is a raw TYPE-ERROR, and every branch below once could."
+  (is-true (subtypep 'invalid-extent 'spacetime-error))
+  (signals spacetime-error
+    (sexp->extent '(:temporal-extent 1 :bogus (:unbounded :unbounded) nil
+                    :nsec :validity :observed)))
+  (signals spacetime-error
+    (sexp->extent '(:temporal-extent 1 :instant 42 nil
+                    :nsec :validity :observed)))
+  (signals spacetime-error
+    (sexp->extent '(:temporal-extent 1 :instant (17 17) nil
+                    :nsec :validity :observed)))
+  (signals spacetime-error
+    (sexp->extent '(:temporal-extent 1 :instant (:unbounded :unbounded) nil
+                    :fortnight :validity :observed)))
+  (signals spacetime-error
+    (sexp->extent '(:temporal-extent 1 :instant (:unbounded :unbounded) nil
+                    :nsec :validity :not-a-standing))))
 
 (test the-codec-preserves-instant-coupling
   "A round-tripped instant must come back coupled, or the algebra would
