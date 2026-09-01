@@ -102,3 +102,44 @@ algebra's own terms, not as NIL."
     (is-true (extent-before-p a b))
     (is-false (extent-after-p a b))
     (is-true (extent-after-p b a))))
+
+;;; GH #2: an interval's endpoints are not independent -- its end is never
+;;; before its start -- so an unknown end must not admit relations that
+;;; place the end before a point the start is already known to follow.
+
+(test an-open-ended-interval-is-after-a-point-before-its-start
+  "[s, unknown) vs a point p < s: only :BEFORE is possible from p's side.
+Without the clamp, the unknown end compares :AMBIGUOUS against p and
+:FINISHES / :AFTER leak in, so p reads as possibly inside the interval."
+  (let ((open (make-interval (exact-bound (ts 2026 9 3)) (unknown-bound)))
+        (p (make-instant (exact-bound (ts 2026 9 2)))))
+    (is (equal '(:before) (temporal-relation-relations
+                           (allen-relations p open))))
+    (is (equal '(:after) (temporal-relation-relations
+                          (allen-relations open p))))
+    (is (eq :before (allen-relation p open)))))
+
+(test an-open-ended-interval-is-after-an-interval-that-ends-before-it
+  (let ((open (make-interval (exact-bound (ts 2026 9 3)) (unknown-bound)))
+        (earlier (make-interval (exact-bound (ts 2026 9 1))
+                                (exact-bound (ts 2026 9 2)))))
+    (is (equal '(:after) (temporal-relation-relations
+                          (allen-relations open earlier))))
+    (is (equal '(:before) (temporal-relation-relations
+                           (allen-relations earlier open))))))
+
+(test an-unknown-start-is-before-a-point-after-its-end
+  "The mirror: (unknown, e] vs a point p > e admits only :AFTER from p."
+  (let ((open (make-interval (unknown-bound) (exact-bound (ts 2026 9 1))))
+        (p (make-instant (exact-bound (ts 2026 9 2)))))
+    (is (equal '(:after) (temporal-relation-relations
+                          (allen-relations p open))))))
+
+(test a-point-inside-an-open-ended-interval-is-still-ambiguous
+  "Control: the clamp removes only incoherent relations.  A point after
+the start of [s, unknown) may still be inside it or after it."
+  (let ((open (make-interval (exact-bound (ts 2026 9 1)) (unknown-bound)))
+        (p (make-instant (exact-bound (ts 2026 9 2)))))
+    (is (null (set-exclusive-or
+               '(:during :finishes :after)
+               (temporal-relation-relations (allen-relations p open)))))))

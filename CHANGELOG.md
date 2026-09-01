@@ -7,6 +7,19 @@ not cut a release yet.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An interval's endpoints are compared as a pair, not independently
+  (#2).** The Allen computation now takes each interval's *effective*
+  bounds -- an end no earlier than its start, a start no later than its
+  end -- so `[s, unknown)` against a point before `s` yields `(:before)`
+  from the point's side instead of `(:before :finishes :after)`, and an
+  open-ended interval no longer reads as possibly overlapping anything
+  that precedes its start. Stored bounds are untouched: `unknown-bound`
+  still means unknown, and `extent->sexp` is unchanged. Every consumer
+  that asks "what held at t" through the algebra (`extents-disjoint-p`,
+  `claims-touching :at` in graph-db/spacetime) gets the corrected answer.
+
 ### Changed
 
 - **`sexp->extent` rejects more malformed input than it used to.** It now
