@@ -7,6 +7,16 @@ not cut a release yet.
 
 ## [Unreleased]
 
+### Added
+
+- **`extents-disjoint-p` and `extents-intersect-p`** (#1), moved in from
+  graph-db/spacetime: "certainly share no instant" (every possible
+  relation is `:before` or `:after` -- so `:meets` is not disjoint, and an
+  ambiguous pair is not disjoint) and its possibility counterpart. Both
+  take two extents; a NIL-overlaps-everything convention stays with the
+  caller. System version bumped to 0.2.0 so a consumer can declare the
+  floor.
+
 ### Fixed
 
 - **An interval's endpoints are compared as a pair, not independently
