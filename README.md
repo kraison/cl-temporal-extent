@@ -38,6 +38,10 @@ can be told apart.
                :semantics :transaction)          ; "recorded then, still true"
 ```
 
+An unknown end is unknown, but never before its own start: the algebra
+compares an interval's endpoints as a pair, so `[start, unknown)` is
+definitely `:after` anything that ends before `start` (#2).
+
 **A standing says how you came to know** — and, crucially, includes four
 distinct ways of *not* knowing:
 

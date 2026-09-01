@@ -55,13 +55,40 @@ and SEMANTICS carry both endpoints' values -- not a collapse (design §4.4)."
   "An :AMBIGUOUS comparison constrains nothing, so it matches any sign."
   (or (eq computed :ambiguous) (eq computed expected)))
 
+(defun %effective-end (e)
+  "E's END with its EARLIEST raised to the START's EARLIEST.  An end is
+never before its start, so an unknown or wide end bound must not be
+compared as if it could precede the start (GH #2).  MAKE-INTERVAL already
+guarantees START's earliest <= END's latest, so the result is a bound."
+  (let* ((end (extent-end e))
+         (se (bound-earliest (extent-start e)))
+         (ee (bound-earliest end)))
+    (if (or (eq se :unbounded)
+            (and (not (eq ee :unbounded)) (local-time:timestamp<= se ee)))
+        end
+        (%make-bound se (bound-latest end)))))
+
+(defun %effective-start (e)
+  "The mirror of %EFFECTIVE-END: START with its LATEST lowered to END's
+LATEST."
+  (let* ((start (extent-start e))
+         (sl (bound-latest start))
+         (el (bound-latest (extent-end e))))
+    (if (or (eq el :unbounded)
+            (and (not (eq sl :unbounded)) (local-time:timestamp<= sl el)))
+        start
+        (%make-bound (bound-earliest start) el))))
+
 (defun %interval-relations (a b)
-  "The relations consistent with A and B's four endpoint comparisons.
-Correct only when NEITHER extent is an instant."
-  (let ((c1 (bound-compare (extent-start a) (extent-start b)))
-        (c2 (bound-compare (extent-start a) (extent-end b)))
-        (c3 (bound-compare (extent-end a) (extent-start b)))
-        (c4 (bound-compare (extent-end a) (extent-end b))))
+  "The relations consistent with A and B's four endpoint comparisons,
+taken on their EFFECTIVE bounds (GH #2).  Correct only when NEITHER
+extent is an instant."
+  (let* ((as (%effective-start a)) (ae (%effective-end a))
+         (bs (%effective-start b)) (be (%effective-end b))
+         (c1 (bound-compare as bs))
+         (c2 (bound-compare as be))
+         (c3 (bound-compare ae bs))
+         (c4 (bound-compare ae be)))
     (loop for (rel s1 s2 s3 s4) in +allen-signatures+
           when (and (%compatible-p c1 s1) (%compatible-p c2 s2)
                     (%compatible-p c3 s3) (%compatible-p c4 s4))
@@ -80,8 +107,8 @@ Correct only when NEITHER extent is an instant."
   "Point P against interval I, per the design §3.3.1 table.  :MEETS and the
 other eight are unreachable: under closed intervals a point at I's start is
 INSIDE I, so :STARTS states strictly more than :MEETS."
-  (let ((cs (bound-compare (extent-start p) (extent-start i)))
-        (ce (bound-compare (extent-start p) (extent-end i)))
+  (let ((cs (bound-compare (extent-start p) (%effective-start i)))
+        (ce (bound-compare (extent-start p) (%effective-end i)))
         (rels '()))
     (flet ((maybe (comparison &rest admissible)
              (member comparison admissible)))
