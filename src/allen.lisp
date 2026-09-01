@@ -175,3 +175,25 @@ NIL.  NIL means \"more than one relation is possible\", never \"unrelated\"."
 (%define-relation-predicate extent-overlapped-by-p :overlapped-by)
 (%define-relation-predicate extent-met-by-p :met-by)
 (%define-relation-predicate extent-after-p :after)
+
+;;; Disjointness and intersection -- properties of the algebra, not of any
+;;; consumer (GH #1; previously a copy in graph-db/spacetime).
+
+(defun extents-disjoint-p (a b)
+  "True when extents A and B CERTAINLY share no instant: every relation
+possible between them is :BEFORE or :AFTER.  :MEETS is not disjoint --
+intervals are closed, so meeting extents share their boundary instant --
+and an ambiguous pair is not disjoint either.  Both arguments must be
+extents; a caller's NIL convention is the caller's."
+  (check-type a temporal-extent)
+  (check-type b temporal-extent)
+  (and (every (lambda (r) (member r '(:before :after)))
+              (temporal-relation-relations (allen-relations a b)))
+       t))
+
+(defun extents-intersect-p (a b)
+  "True when extents A and B POSSIBLY share an instant -- the negation of
+EXTENTS-DISJOINT-P over two extents.  A pair that might overlap
+intersects here and is not disjoint there: the one is a possibility, the
+other a certainty."
+  (not (extents-disjoint-p a b)))

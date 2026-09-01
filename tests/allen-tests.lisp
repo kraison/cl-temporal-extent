@@ -143,3 +143,53 @@ the start of [s, unknown) may still be inside it or after it."
     (is (null (set-exclusive-or
                '(:during :finishes :after)
                (temporal-relation-relations (allen-relations p open)))))))
+
+;;; GH #1: "certainly share no instant" / "possibly share an instant" are
+;;; properties of the algebra, moved here from graph-db/spacetime.
+
+(test disjointness-is-certain-and-meeting-is-not-disjoint
+  "Closed intervals that meet share their boundary instant (design §3.2)."
+  (let ((a (exact-interval (ts 2026 1 1) (ts 2026 1 2)))
+        (b (exact-interval (ts 2026 1 2) (ts 2026 1 3)))
+        (c (exact-interval (ts 2026 1 3) (ts 2026 1 4))))
+    (is-true (extents-disjoint-p a c))
+    (is-true (extents-disjoint-p c a) "symmetric")
+    (is-false (extents-disjoint-p a b) ":meets is not disjoint")
+    (is-false (extents-intersect-p a c))
+    (is-true (extents-intersect-p a b))))
+
+(test an-ambiguous-pair-is-not-disjoint
+  "Definite only when no choice within either range gives another answer:
+a pair that MIGHT overlap is not certainly disjoint, and not certainly
+intersecting either -- INTERSECT-P is the possibility, DISJOINT-P the
+certainty, so both can be NIL/T respectively for one pair."
+  (let ((fuzzy (make-interval (make-bound (ts 2026 1 1) (ts 2026 1 3))
+                              (make-bound (ts 2026 1 2) (ts 2026 1 4))))
+        (b (exact-interval (ts 2026 1 3) (ts 2026 1 5))))
+    (is-false (extents-disjoint-p fuzzy b))
+    (is-true (extents-intersect-p fuzzy b))))
+
+(test a-point-is-disjoint-from-an-interval-only-when-outside-it
+  (let ((i (exact-interval (ts 2026 1 2) (ts 2026 1 4))))
+    (is-true (extents-disjoint-p (make-instant (exact-bound (ts 2026 1 1)))
+                                 i))
+    (is-false (extents-disjoint-p (make-instant (exact-bound (ts 2026 1 2)))
+                                  i)
+              "the closed start is inside")
+    (is-false (extents-disjoint-p (make-instant (exact-bound (ts 2026 1 3)))
+                                  i))
+    (is-true (extents-disjoint-p (make-instant (exact-bound (ts 2026 1 5)))
+                                 i))))
+
+(test an-open-ended-interval-is-disjoint-from-what-precedes-its-start
+  "The #2 case, through the predicate consumers actually call."
+  (let ((open (make-interval (exact-bound (ts 2026 9 3)) (unknown-bound)))
+        (p (make-instant (exact-bound (ts 2026 9 2)))))
+    (is-true (extents-disjoint-p open p))
+    (is-true (extents-disjoint-p p open))))
+
+(test disjointness-takes-two-extents-and-refuses-nil
+  "NIL-overlaps-everything is a consumer convention, not the algebra's."
+  (let ((i (exact-interval (ts 2026 1 2) (ts 2026 1 4))))
+    (signals type-error (extents-disjoint-p nil i))
+    (signals type-error (extents-intersect-p i nil))))
