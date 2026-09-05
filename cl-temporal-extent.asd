@@ -5,7 +5,7 @@
 time, and a vocabulary for how a fact came to be known."
   :author "Kevin Thomas Raison"
   :license "MIT"
-  :version "0.2.0"
+  :version "0.3.0"
   :depends-on ("local-time")
   :serial t
   :pathname "src/"

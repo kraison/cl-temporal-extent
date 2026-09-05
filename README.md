@@ -73,6 +73,12 @@ rather than guessing one.
 A caller that needs a definite answer can ask whether it has one, instead of
 receiving a confident wrong answer.
 
+**`extent-intersection`** constructs the extent two extents share, or NIL
+when they certainly share none — meeting closed intervals share their
+boundary instant, a point narrows to where it can lie in the other extent,
+fuzzy bounds combine coordinate-wise. Standing and semantics default to the
+first argument's; the library does not decide what an intersection *means*.
+
 ## Serialization
 
 `extent->sexp` produces a tree of keywords, integers and timestamps — plain

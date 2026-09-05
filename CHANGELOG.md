@@ -9,6 +9,20 @@ not cut a release yet.
 
 ### Added
 
+- **`extent-intersection`** (#5): `(extent-intersection a b &key precision
+  semantics standing) => extent or NIL`, the constructor
+  `extents-intersect-p` implied but never provided. NIL when the pair is
+  certainly disjoint; meeting closed intervals intersect in their
+  boundary instant; a point on either side narrows to where it can lie
+  inside the other extent; fuzzy bounds combine coordinate-wise, and the
+  result is normalised so an end's earliest is never before the start's
+  earliest. An unknown end is unknown, not infinite -- intersecting an
+  open-ended interval with a bounded one gives a *range* for the shared
+  end, not a point, unless the other side pins it exactly. PRECISION
+  defaults to the coarser of the two inputs', SEMANTICS and STANDING to
+  the first argument's. System version bumped to 0.3.0 so a consumer can
+  declare the floor.
+
 - **`extents-disjoint-p` and `extents-intersect-p`** (#1), moved in from
   graph-db/spacetime: "certainly share no instant" (every possible
   relation is `:before` or `:after` -- so `:meets` is not disjoint, and an

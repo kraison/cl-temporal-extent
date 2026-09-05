@@ -193,3 +193,138 @@ certainty, so both can be NIL/T respectively for one pair."
   (let ((i (exact-interval (ts 2026 1 2) (ts 2026 1 4))))
     (signals type-error (extents-disjoint-p nil i))
     (signals type-error (extents-intersect-p i nil))))
+
+;;; extent-intersection (#5): the extent two extents share, or NIL.
+
+(test intersection-of-overlapping-exact-intervals-is-the-overlap
+  (let* ((a (exact-interval (ts 2026 1 1) (ts 2026 3 31)))
+         (b (exact-interval (ts 2026 2 1) (ts 2026 6 30)))
+         (r (extent-intersection a b)))
+    (is-true r)
+    (is (eq :interval (extent-kind r)))
+    (is (timestamp= (ts 2026 2 1) (bound-earliest (extent-start r))))
+    (is (timestamp= (ts 2026 3 31) (bound-latest (extent-end r))))
+    (is-true (bound-exact-p (extent-start r)))
+    (is-true (bound-exact-p (extent-end r)))
+    ;; Commutative in the bounds.
+    (let ((s (extent-intersection b a)))
+      (is (timestamp= (bound-earliest (extent-start r))
+                      (bound-earliest (extent-start s))))
+      (is (timestamp= (bound-latest (extent-end r))
+                      (bound-latest (extent-end s)))))))
+
+(test intersection-of-disjoint-extents-is-nil
+  (let ((a (exact-interval (ts 2026 1 1) (ts 2026 1 31)))
+        (b (exact-interval (ts 2026 3 1) (ts 2026 3 31))))
+    (is (null (extent-intersection a b)))
+    (is (null (extent-intersection b a)))
+    ;; Control: the same A against something it does touch is not NIL.
+    (is-true (extent-intersection a (exact-interval (ts 2026 1 15)
+                                                    (ts 2026 2 15))))))
+
+(test meeting-intervals-intersect-in-their-boundary-instant
+  "Intervals are closed, so [1,2] and [2,3] share the instant 2."
+  (let ((r (extent-intersection (exact-interval (ts 2026 1 1) (ts 2026 1 2))
+                                (exact-interval (ts 2026 1 2) (ts 2026 1 3)))))
+    (is-true r)
+    (is-true (extent-instant-p r))
+    (is (timestamp= (ts 2026 1 2) (bound-earliest (extent-start r))))))
+
+(test containment-intersects-to-the-inner-extent
+  (let* ((outer (exact-interval (ts 2026 1 1) (ts 2026 12 31)))
+         (inner (exact-interval (ts 2026 3 1) (ts 2026 3 31)))
+         (r (extent-intersection outer inner)))
+    (is (timestamp= (ts 2026 3 1) (bound-earliest (extent-start r))))
+    (is (timestamp= (ts 2026 3 31) (bound-latest (extent-end r))))))
+
+(test an-instant-intersects-an-interval-as-itself-or-not-at-all
+  (let ((i (exact-interval (ts 2026 1 1) (ts 2026 1 31)))
+        (inside (make-instant (exact-bound (ts 2026 1 10))))
+        (outside (make-instant (exact-bound (ts 2026 2 10)))))
+    (let ((r (extent-intersection inside i)))
+      (is-true (extent-instant-p r))
+      (is (timestamp= (ts 2026 1 10) (bound-earliest (extent-start r)))))
+    (is (null (extent-intersection outside i)))
+    ;; Both orders.
+    (is-true (extent-instant-p (extent-intersection i inside)))))
+
+(test a-fuzzy-instant-is-narrowed-to-the-interval
+  "A point known only to lie in [Jan 1, Jan 20], intersected with
+[Jan 10, Jan 31], is a point in [Jan 10, Jan 20]."
+  (let* ((p (make-instant (make-bound (ts 2026 1 1) (ts 2026 1 20))))
+         (i (exact-interval (ts 2026 1 10) (ts 2026 1 31)))
+         (r (extent-intersection p i)))
+    (is-true (extent-instant-p r))
+    (is (timestamp= (ts 2026 1 10) (bound-earliest (extent-start r))))
+    (is (timestamp= (ts 2026 1 20) (bound-latest (extent-start r))))))
+
+(test an-open-end-becomes-a-range-bounded-by-the-other-extents-end
+  "An unknown end is unknown, not infinite: the intersection's end lies
+somewhere in [start, Mar 1]."
+  (let* ((open (make-interval (exact-bound (ts 2026 1 1)) (unknown-bound)))
+         (closed (exact-interval (ts 2026 2 1) (ts 2026 3 1)))
+         (r (extent-intersection open closed)))
+    (is (timestamp= (ts 2026 2 1) (bound-earliest (extent-start r))))
+    (is-true (bound-exact-p (extent-start r)))
+    (is (timestamp= (ts 2026 2 1) (bound-earliest (extent-end r))))
+    (is (timestamp= (ts 2026 3 1) (bound-latest (extent-end r))))
+    (is-false (bound-exact-p (extent-end r)))))
+
+(test fuzzy-bounds-combine-coordinate-wise
+  "Starts take the later of each coordinate, ends the earlier."
+  (let* ((a (make-interval (make-bound (ts 2026 1 1) (ts 2026 1 10))
+                           (make-bound (ts 2026 3 1) (ts 2026 3 10))))
+         (b (make-interval (make-bound (ts 2026 1 5) (ts 2026 1 20))
+                           (make-bound (ts 2026 2 20) (ts 2026 3 5))))
+         (r (extent-intersection a b)))
+    (is (timestamp= (ts 2026 1 5) (bound-earliest (extent-start r))))
+    (is (timestamp= (ts 2026 1 20) (bound-latest (extent-start r))))
+    (is (timestamp= (ts 2026 2 20) (bound-earliest (extent-end r))))
+    (is (timestamp= (ts 2026 3 5) (bound-latest (extent-end r))))))
+
+(test intersection-metadata-defaults-and-keywords
+  (let* ((a (make-interval (exact-bound (ts 2026 1 1))
+                           (exact-bound (ts 2026 3 1))
+                           :precision :day :semantics :validity
+                           :standing :observed))
+         (b (make-interval (exact-bound (ts 2026 2 1))
+                           (exact-bound (ts 2026 4 1))
+                           :precision :month :semantics :event
+                           :standing :asserted))
+         (r (extent-intersection a b))
+         (k (extent-intersection a b :semantics :transaction
+                                     :standing :inferred
+                                     :precision :second)))
+    ;; Defaults: A's semantics and standing, the coarser precision.
+    (is (eq :validity (extent-semantics r)))
+    (is (eq :observed (extent-standing r)))
+    (is (eq :month (extent-precision r)))
+    (is (eq :transaction (extent-semantics k)))
+    (is (eq :inferred (extent-standing k)))
+    (is (eq :second (extent-precision k)))))
+
+(test intersection-is-nil-exactly-when-disjoint-over-exact-intervals
+  "Property over every pair of small exact intervals: NIL iff
+EXTENTS-DISJOINT-P, and a non-NIL result touches both inputs and is
+[max start, min end]."
+  (loop for as from 1 to 4 do
+    (loop for ae from (1+ as) to 5 do
+      (loop for bs from 1 to 4 do
+        (loop for be from (1+ bs) to 5 do
+          (let* ((a (exact-interval (ts 2026 1 as) (ts 2026 1 ae)))
+                 (b (exact-interval (ts 2026 1 bs) (ts 2026 1 be)))
+                 (r (extent-intersection a b)))
+            (is (eq (null r) (extents-disjoint-p a b))
+                "[~D,~D] vs [~D,~D]" as ae bs be)
+            (when r
+              (is-false (extents-disjoint-p r a))
+              (is-false (extents-disjoint-p r b))
+              (is (timestamp= (ts 2026 1 (max as bs))
+                              (bound-earliest (extent-start r))))
+              (is (timestamp= (ts 2026 1 (min ae be))
+                              (bound-latest (extent-end r)))))))))))
+
+(test intersection-rejects-a-non-extent
+  (let ((i (exact-interval (ts 2026 1 1) (ts 2026 1 2))))
+    (signals type-error (extent-intersection nil i))
+    (signals type-error (extent-intersection i nil))))
