@@ -197,3 +197,110 @@ EXTENTS-DISJOINT-P over two extents.  A pair that might overlap
 intersects here and is not disjoint there: the one is a possibility, the
 other a certainty."
   (not (extents-disjoint-p a b)))
+
+;;; Intersection -- the extent two extents share (#5).
+
+(defun %later-start (a b)
+  "The later of two START bounds, coordinate-wise: the later earliest,
+the later latest.  :UNBOUNDED is -inf in an earliest and +inf in a
+latest."
+  (flet ((later-earliest (x y)
+           (cond ((eq x :unbounded) y)
+                 ((eq y :unbounded) x)
+                 ((local-time:timestamp< x y) y)
+                 (t x)))
+         (later-latest (x y)
+           (cond ((or (eq x :unbounded) (eq y :unbounded)) :unbounded)
+                 ((local-time:timestamp< x y) y)
+                 (t x))))
+    (%make-bound (later-earliest (bound-earliest a) (bound-earliest b))
+                 (later-latest (bound-latest a) (bound-latest b)))))
+
+(defun %earlier-end (a b)
+  "The mirror of %LATER-START for END bounds."
+  (flet ((earlier-earliest (x y)
+           (cond ((or (eq x :unbounded) (eq y :unbounded)) :unbounded)
+                 ((local-time:timestamp< x y) x)
+                 (t y)))
+         (earlier-latest (x y)
+           (cond ((eq x :unbounded) y)
+                 ((eq y :unbounded) x)
+                 ((local-time:timestamp< x y) x)
+                 (t y))))
+    (%make-bound (earlier-earliest (bound-earliest a) (bound-earliest b))
+                 (earlier-latest (bound-latest a) (bound-latest b)))))
+
+(defun %coarser-precision (a b)
+  "The coarser of two precisions; +PRECISIONS+ runs coarse to fine."
+  (if (<= (position a +precisions+) (position b +precisions+)) a b))
+
+(defun %normalize-bounds (start end)
+  "START and END, adjusted so END's earliest is never before START's
+earliest and START's latest never after END's latest -- the same rule
+%EFFECTIVE-START/%EFFECTIVE-END apply to a stored extent's own bounds
+(#2), applied directly to a freshly computed pair instead of by
+building a throwaway extent.  Two values: the normalised START and
+END, which may collapse to equal exact bounds -- the caller must not
+assume they stay distinct."
+  (let ((se (bound-earliest start)) (sl (bound-latest start))
+        (ee (bound-earliest end))   (el (bound-latest end)))
+    (values (if (or (eq el :unbounded)
+                    (and (not (eq sl :unbounded))
+                         (local-time:timestamp<= sl el)))
+                start
+                (%make-bound se el))
+            (if (or (eq se :unbounded)
+                    (and (not (eq ee :unbounded))
+                         (local-time:timestamp<= se ee)))
+                end
+                (%make-bound se el)))))
+
+(defun extent-intersection (a b &key precision semantics standing)
+  "The extent A and B share, or NIL when they certainly share no instant
+(EXTENTS-DISJOINT-P).  Closed-interval semantics: meeting intervals
+share their boundary instant, which comes back as an instant.  An
+instant on either side gives an instant, narrowed to where it can lie
+inside the other extent.  Fuzzy bounds combine coordinate-wise -- the
+later start, the earlier end -- on the EFFECTIVE bounds (#2).
+PRECISION defaults to the coarser of the two, SEMANTICS and STANDING
+to A's; the library does not decide what an intersection means to a
+caller.  Signals TYPE-ERROR on a non-extent, as EXTENTS-DISJOINT-P
+does.  The result's bounds are normalised: an end's earliest is never
+before the start's earliest, a start's latest never after the end's
+latest."
+  (check-type a temporal-extent)
+  (check-type b temporal-extent)
+  (when (extents-disjoint-p a b)
+    (return-from extent-intersection nil))
+  (let ((start (%later-start (%effective-start a) (%effective-start b)))
+        (end (%earlier-end (%effective-end a) (%effective-end b)))
+        (precision (or precision
+                       (%coarser-precision (extent-precision a)
+                                           (extent-precision b))))
+        (semantics (or semantics (extent-semantics a)))
+        (standing (or standing (extent-standing a))))
+    (cond ((or (extent-instant-p a) (extent-instant-p b))
+           ;; A point somewhere in START's earliest .. END's latest;
+           ;; MAKE-BOUND's reversed check is the guard that the
+           ;; disjointness test above was right.
+           (make-instant (make-bound (bound-earliest start)
+                                     (bound-latest end))
+                         :precision precision :semantics semantics
+                         :standing standing))
+          (t
+           ;; Normalise before dispatching: the raw START/END pair can
+           ;; normalise into a single exact point even when it started
+           ;; out :AMBIGUOUS (#5) -- one ECASE on the normalised pair,
+           ;; not a second, unguarded MAKE-INTERVAL.
+           (multiple-value-bind (start end) (%normalize-bounds start end)
+             (ecase (bound-compare start end)
+               (:= (make-instant start :precision precision
+                                       :semantics semantics
+                                       :standing standing))
+               ((:< :ambiguous)
+                (make-interval start end :precision precision
+                                         :semantics semantics
+                                         :standing standing))
+               ;; Unreachable past the disjointness test; ECASE keeps
+               ;; that claim honest rather than returning junk.
+               (:> nil)))))))

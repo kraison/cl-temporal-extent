@@ -32,7 +32,7 @@
    #:temporal-relation-semantics
    #:+allen-relations+ #:+allen-inverses+ #:allen-inverse
    #:allen-relations #:allen-relation #:allen-definite-p
-   #:extents-disjoint-p #:extents-intersect-p
+   #:extents-disjoint-p #:extents-intersect-p #:extent-intersection
    #:extent-before-p #:extent-meets-p #:extent-overlaps-p
    #:extent-finished-by-p #:extent-contains-p #:extent-starts-p
    #:extent-equals-p #:extent-started-by-p #:extent-during-p
