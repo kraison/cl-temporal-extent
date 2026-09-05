@@ -234,6 +234,27 @@ latest."
   "The coarser of two precisions; +PRECISIONS+ runs coarse to fine."
   (if (<= (position a +precisions+) (position b +precisions+)) a b))
 
+(defun %normalize-bounds (start end)
+  "START and END, adjusted so END's earliest is never before START's
+earliest and START's latest never after END's latest -- the same rule
+%EFFECTIVE-START/%EFFECTIVE-END apply to a stored extent's own bounds
+(#2), applied directly to a freshly computed pair instead of by
+building a throwaway extent.  Two values: the normalised START and
+END, which may collapse to equal exact bounds -- the caller must not
+assume they stay distinct."
+  (let ((se (bound-earliest start)) (sl (bound-latest start))
+        (ee (bound-earliest end))   (el (bound-latest end)))
+    (values (if (or (eq el :unbounded)
+                    (and (not (eq sl :unbounded))
+                         (local-time:timestamp<= sl el)))
+                start
+                (%make-bound se el))
+            (if (or (eq se :unbounded)
+                    (and (not (eq ee :unbounded))
+                         (local-time:timestamp<= se ee)))
+                end
+                (%make-bound se el)))))
+
 (defun extent-intersection (a b &key precision semantics standing)
   "The extent A and B share, or NIL when they certainly share no instant
 (EXTENTS-DISJOINT-P).  Closed-interval semantics: meeting intervals
@@ -267,21 +288,19 @@ latest."
                          :precision precision :semantics semantics
                          :standing standing))
           (t
-           (ecase (bound-compare start end)
-             (:= (make-instant start :precision precision
-                                     :semantics semantics
-                                     :standing standing))
-             ((:< :ambiguous)
-              (let ((interval (make-interval start end
-                                              :precision precision
-                                              :semantics semantics
-                                              :standing standing)))
-                ;; Normalise: an end never before its start (#2), read
-                ;; back off the interval we just built.
-                (make-interval (%effective-start interval)
-                                (%effective-end interval)
-                                :precision precision :semantics semantics
-                                :standing standing)))
-             ;; Unreachable past the disjointness test; ECASE keeps
-             ;; that claim honest rather than returning junk.
-             (:> nil))))))
+           ;; Normalise before dispatching: the raw START/END pair can
+           ;; normalise into a single exact point even when it started
+           ;; out :AMBIGUOUS (#5) -- one ECASE on the normalised pair,
+           ;; not a second, unguarded MAKE-INTERVAL.
+           (multiple-value-bind (start end) (%normalize-bounds start end)
+             (ecase (bound-compare start end)
+               (:= (make-instant start :precision precision
+                                       :semantics semantics
+                                       :standing standing))
+               ((:< :ambiguous)
+                (make-interval start end :precision precision
+                                         :semantics semantics
+                                         :standing standing))
+               ;; Unreachable past the disjointness test; ECASE keeps
+               ;; that claim honest rather than returning junk.
+               (:> nil)))))))

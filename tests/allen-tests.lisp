@@ -282,6 +282,20 @@ somewhere in [start, Mar 1]."
     (is (timestamp= (ts 2026 2 20) (bound-earliest (extent-end r))))
     (is (timestamp= (ts 2026 3 5) (bound-latest (extent-end r))))))
 
+(test a-fuzzy-pair-that-normalises-to-a-point-gives-an-instant
+  "A pair whose raw combined bounds are only :AMBIGUOUS can still
+normalise to a single exact instant; EXTENT-INTERSECTION must dispatch
+on the NORMALISED pair, not the raw one, or the interval branch's
+MAKE-INTERVAL signals INVALID-EXTENT on a legitimate intersection."
+  (let* ((a (make-interval (make-bound (ts 2026 1 16) (ts 2026 1 21))
+                           (exact-bound (ts 2026 4 16))))
+         (b (make-interval (exact-bound (ts 2026 1 1))
+                           (make-bound (ts 2026 1 11) (ts 2026 1 16))))
+         (r (extent-intersection a b)))
+    (is-true (extent-instant-p r))
+    (is (timestamp= (ts 2026 1 16) (bound-earliest (extent-start r))))
+    (is-true (bound-exact-p (extent-start r)))))
+
 (test intersection-metadata-defaults-and-keywords
   (let* ((a (make-interval (exact-bound (ts 2026 1 1))
                            (exact-bound (ts 2026 3 1))
@@ -306,7 +320,10 @@ somewhere in [start, Mar 1]."
 (test intersection-is-nil-exactly-when-disjoint-over-exact-intervals
   "Property over every pair of small exact intervals: NIL iff
 EXTENTS-DISJOINT-P, and a non-NIL result touches both inputs and is
-[max start, min end]."
+[max start, min end]. A second pass repeats the NIL-iff-disjoint half
+over the same positions with FUZZY bounds, without the positional
+check (which assumes exactness) -- just that EXTENT-INTERSECTION
+never signals and stays consistent with EXTENTS-DISJOINT-P."
   (loop for as from 1 to 4 do
     (loop for ae from (1+ as) to 5 do
       (loop for bs from 1 to 4 do
@@ -322,7 +339,37 @@ EXTENTS-DISJOINT-P, and a non-NIL result touches both inputs and is
               (is (timestamp= (ts 2026 1 (max as bs))
                               (bound-earliest (extent-start r))))
               (is (timestamp= (ts 2026 1 (min ae be))
-                              (bound-latest (extent-end r)))))))))))
+                              (bound-latest (extent-end r))))))))))
+  ;; Endpoints each independently exact or fuzzy [d, d+2], at the same
+  ;; ordered positions as above so every constructed pair is a sane
+  ;; interval (start strictly before end, per MAKE-INTERVAL). None of
+  ;; these trip the pre-existing "empty relation set" signature-table
+  ;; gap in ALLEN-RELATIONS (used by EXTENTS-DISJOINT-P) -- verified by
+  ;; running this exact loop before committing it; if a future change
+  ;; makes one signal, that is the pre-existing bug, not this function.
+  (flet ((fuzzy-bound (kind d)
+           (ecase kind
+             (:exact (exact-bound (ts 2026 1 d)))
+             (:fuzzy (make-bound (ts 2026 1 d) (ts 2026 1 (+ d 2)))))))
+    (loop for as from 1 to 4 do
+      (loop for ae from (1+ as) to 5 do
+        (loop for bs from 1 to 4 do
+          (loop for be from (1+ bs) to 5 do
+            (dolist (ask '(:exact :fuzzy))
+              (dolist (aek '(:exact :fuzzy))
+                (dolist (bsk '(:exact :fuzzy))
+                  (dolist (bek '(:exact :fuzzy))
+                    (let* ((a (make-interval (fuzzy-bound ask as)
+                                             (fuzzy-bound aek ae)))
+                           (b (make-interval (fuzzy-bound bsk bs)
+                                             (fuzzy-bound bek be)))
+                           (r (extent-intersection a b)))
+                      (is (eq (null r) (extents-disjoint-p a b))
+                          "fuzzy [~D ~A,~D ~A] vs [~D ~A,~D ~A]"
+                          as ask ae aek bs bsk be bek)
+                      (when r
+                        (is-false (extents-disjoint-p r a))
+                        (is-false (extents-disjoint-p r b))))))))))))))
 
 (test intersection-rejects-a-non-extent
   (let ((i (exact-interval (ts 2026 1 1) (ts 2026 1 2))))
